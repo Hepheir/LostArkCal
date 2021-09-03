@@ -2,7 +2,8 @@ import selenium
 import itertools
 import time
 import copy
-from tqdm import tqdm
+from requests import Request, Session
+import webbrowser
 from bs4 import BeautifulSoup
 
 from selenium import webdriver
@@ -19,6 +20,15 @@ from Hepheir.__main__ import main as search_key
 from Hepheir.__main__ import QUERY
 
 
+class ACCESSORY:
+    def __init__(self, name):
+        self.name = name
+    total_data: BeautifulSoup
+    effect = {}
+    price_low: int
+    price_buy: int
+
+
 def find_price(target, zero_list):
     _target = copy.deepcopy(target)
     options = webdriver.ChromeOptions()  # 크롬 옵션 객체 생성
@@ -28,6 +38,9 @@ def find_price(target, zero_list):
     driver.implicitly_wait(5)
 
     driver.get(url='https://lostark.game.onstove.com/Market')
+    driver.find_element_by_name('user_id').send_keys("oodeng98@gmail.com")
+    driver.find_element_by_name('user_pwd').send_keys("lostarkengrave24")
+    driver.find_element_by_xpath('//*[@id="idLogin"]/div[3]/button').click()
 
     search_box = driver.find_element_by_id('txtItemName')
     driver.find_element_by_xpath(
@@ -53,8 +66,8 @@ def find_price(target, zero_list):
             _target[i] = remove_comma(ret.text)
         else:
             _target[i] = ret
-    # print(_target)
     driver.quit()
+    print(_target)
     return _target
 
 
@@ -181,8 +194,6 @@ def receive_input_data(engrave_dict):
 
 
 def find_min_set(necklace, earring1, earring2, ring1, ring2, target, ab_stone, book_price):
-    # 각인 효과1, 각인 수치1, 각인 효과2, 각인 수치2, 가격
-    # 치명 신속 목걸이
     book_case = itertools.combinations(set(target.keys()) - set(ab_stone.keys()), 2)  # 어빌리티 스톤에 들어있지 않은 각인들
     read_book = [(9, 12), (12, 9), (12, 12)]
     default = {}
@@ -191,95 +202,96 @@ def find_min_set(necklace, earring1, earring2, ring1, ring2, target, ab_stone, b
             default[i] = ab_stone[i]
         else:
             default[i] = 0
-    necklace.sort(key=lambda x: x[2])
-    earring1.sort(key=lambda x: x[2])
-    earring2.sort(key=lambda x: x[2])
-    ring1.sort(key=lambda x: x[2])
-    ring2.sort(key=lambda x: x[2])
+    necklace.sort(key=lambda x: x.price_low)
+    earring1.sort(key=lambda x: x.price_low)
+    earring2.sort(key=lambda x: x.price_low)
+    ring1.sort(key=lambda x: x.price_low)
+    ring2.sort(key=lambda x: x.price_low)
     total = []
-    min_price = 0  # 나중에 최저가를 넘으면 바로 반복문을 멈추는 기능도 넣으면 더 빨라질듯
+    min_price = 1000000  # 나중에 최저가를 넘으면 바로 반복문을 멈추는 기능도 넣으면 더 빨라질듯
     for y in book_case:
         for u in read_book:
-            book = 0
+            price = 0
             test = copy.deepcopy(default)
             test[y[0]] += u[0]
             test[y[1]] += u[1]
             if u[0] == 12:
-                book += book_price[y[0]] * 20
+                price += book_price[y[0]] * 20
             if u[1] == 12:
-                book += book_price[y[1]] * 20
+                price += book_price[y[1]] * 20
             for q in necklace:
-                temp1 = over_15_check(test, q)
-                if type(temp1) == int:
+                temp1, price1 = stop_check(test, q, price)
+                if type(temp1) == int or min_price < price1:
                     continue
                 for w in earring1:
-                    temp2 = over_15_check(temp1, w)
-                    if type(temp2) == int:
+                    temp2, price2 = stop_check(temp1, w, price1)
+                    if type(temp2) == int or min_price < price2:
                         continue
                     for e in earring2:
-                        temp3 = over_15_check(temp2, e)
-                        if type(temp3) == int:
+                        temp3, price3 = stop_check(temp2, e, price2)
+                        if type(temp3) == int or min_price < price3:
                             continue
                         for r in ring1:
-                            temp4 = over_15_check(temp3, r)
-                            if type(temp4) == int:
+                            temp4, price4 = stop_check(temp3, r, price3)
+                            if type(temp4) == int or min_price < price4:
                                 continue
                             for t in ring2:
                                 check = 0
-                                temp5 = over_15_check(temp4, t)
-                                if type(temp5) != int:
+                                temp5, price5 = stop_check(temp4, t, price4)
+                                if type(temp5) != int or min_price < price5:
                                     for i in temp5:
                                         if temp5[i] != 15:
                                             check = 1
                                             break
                                     if not check:
-                                        total.append(
-                                            (y, u, book, q, w, e, r, t, q[-1] + w[-1] + e[-1] + r[-1] + t[-1] + book))
-
+                                        total.append((y, u, price, q, w, e, r, t, price5))
+                                        min_price = min(min_price, price5)
+                                        # min_price를 구하는 순간 디버프를 고려한 새로운 min_price를 구해내고 그걸로 min_price를 바꾸는 방법은?
+                                        # 일단 지금은 단 하나의 경우의 수를 구하는 프로그램임
     total.sort(key=lambda x: x[-1])
-    for i in range(10):
-        print(total[i])
+    print(total)
 
 
-def auction_set(qual, neck1, neck2, ear1, ear2, rin1, rin2, q):
-    condition = QUERY
-    condition["request[firstCategory]"] = "200000"
-    condition["request[secondCategory]"] = "200010"  # 200010, 200020, 200030, 목걸이, 귀걸이, 팔찌
-    condition["request[itemTier]"] = "3"  # 아이템 티어
-    condition["request[itemGrade]"] = "5"  # 아이템 등급 유물로
-    condition["request[gradeQuality]"] = str(qual)  # 아이템 등급, 10으로 나눠지지 않아도 무관함
+def auction_set():
+    options = webdriver.ChromeOptions()
+    # options.add_argument('headless')
 
-    # 전투 특성 설정
-    battle_dict = {"치명": "15", "특화": "16", "신속": "18"}
+    driver = webdriver.Chrome('chromedriver', options=options)
+    driver.get(url='https://lostark.game.onstove.com/Auction')
+    driver.implicitly_wait(1)
 
-    # 목걸이용 전투 특성 설정
-    if q[0] == 11:
-        # 특성 설정
-        condition["request[etcOptionList][0][firstOption]"] = "2"
-        condition["request[etcOptionList][0][secondOption]"] = battle_dict[neck1]
-        condition["request[etcOptionList][1][firstOption]"] = "2"
-        condition["request[etcOptionList][1][secondOption]"] = battle_dict[neck2]
-    elif q[0] == 12:
-        # 특성 설정
-        if q[1] == 1:
-            condition["request[etcOptionList][0][firstOption]"] = "2"
-            condition["request[etcOptionList][0][secondOption]"] = battle_dict[ear1]
-        else:
-            condition["request[etcOptionList][0][firstOption]"] = "2"
-            condition["request[etcOptionList][0][secondOption]"] = battle_dict[ear2]
-    else:
-        if q[1] == 1:
-            condition["request[etcOptionList][0][firstOption]"] = "2"
-            condition["request[etcOptionList][0][secondOption]"] = battle_dict[rin1]
-        else:
-            condition["request[etcOptionList][0][firstOption]"] = "2"
-            condition["request[etcOptionList][0][secondOption]"] = battle_dict[rin2]
-    return condition
+    driver.find_element_by_name('user_id').send_keys("oodeng98@gmail.com")
+    driver.find_element_by_name('user_pwd').send_keys("lostarkengrave24\n")
 
-    # 각인1 설정
+    try:
+        element = WebDriverWait(driver, 5).until(EC.presence_of_element_located((By.CSS_SELECTOR, '#lostark-wrapper > div > main > div > div.deal > div.deal-contents > form > fieldset > div > div.bt > button.button.button--deal-detail')))
+    finally:
+        driver.find_element_by_css_selector('#selItemTier > div.lui-select__title').click()
+        driver.find_element_by_css_selector('#selItemTier > div.lui-select__option > label:nth-child(4)').click()
+        driver.find_element_by_css_selector('#selItemGrade > div.lui-select__title').click()
+        driver.find_element_by_css_selector('#selItemGrade > div.lui-select__option > label:nth-child(7)').click()
+        driver.find_element_by_css_selector(
+            '#lostark-wrapper > div > main > div > div.deal > div.deal-contents > form > fieldset > div > div.bt > button.button.button--deal-detail').click()
+    return driver
 
-    # 각인2 설정
 
+def common_set(driver, q):
+    try:
+        element = WebDriverWait(driver, 5).until(
+            EC.presence_of_element_located((By.CSS_SELECTOR, '#selCategoryDetail > div.lui-select__title')))
+    finally:
+        driver.find_element_by_css_selector('#selCategoryDetail > div.lui-select__title').click()
+        driver.find_element_by_css_selector(
+            f'#selCategoryDetail > div.lui-select__option > label:nth-child({q[0]})').click()
+        driver.find_element_by_css_selector('#selEtc_0 > div.lui-select__title').click()
+        driver.find_element_by_css_selector('#selEtc_0 > div.lui-select__option > label:nth-child(2)').click()
+        driver.find_element_by_css_selector('#selEtc_2 > div.lui-select__title').click()
+        driver.find_element_by_css_selector('#selEtc_2 > div.lui-select__option > label:nth-child(3)').click()
+        driver.find_element_by_css_selector('#selEtc_3 > div.lui-select__title').click()
+        driver.find_element_by_css_selector('#selEtc_3 > div.lui-select__option > label:nth-child(3)').click()
+        driver.find_element_by_css_selector(
+            '#modal-deal-option > div > div > div.lui-modal__content > div:nth-child(2) > table > tbody > '
+            'tr:nth-child(4) > td:nth-child(4) > div > div.lui-select__title').click()
 
 def remove_comma(ret):
     return int(ret.replace(",", ""))
@@ -287,82 +299,145 @@ def remove_comma(ret):
 
 def auction_search(engrave_dict, neck_qual, earring_qual, ring_qual, neck1, neck2, ear1, ear2, rin1, rin2, target):
     # 카테고리 설정
-    _neck = []
-    _ear1 = []
-    _ear2 = []
-    _rin1 = []
-    _rin2 = []
-    for q in tqdm([(11, 1), (12, 1), (12, 2), (13, 1), (13, 2)]):
-        if q == (12, 2):
-            if ear1 == ear2:
-                _ear2 = _ear1
-                continue
-        elif q == (13, 2):
-            if rin1 == rin2:
-                _rin2 = _rin1
-                continue
+    driver = auction_set()
+    deal_option = {"치명": 2, "특화": 3, "신속": 5}
+    data = []
+    for q in [(11, 1), (12, 1), (12, 2), (13, 1), (13, 2)]:
+        common_set(driver, q)
+        temp_list = []
         if q[0] == 11:
-            qual = neck_qual
+            driver.find_element_by_css_selector(
+                f'#modal-deal-option > div > div > div.lui-modal__content > div:nth-child(2) > table > tbody > '
+                f'tr:nth-child(4) > td:nth-child(4) > div > div.lui-select__option > label:nth-child('
+                f'{neck_qual})').click()
+            driver.find_element_by_css_selector('#selEtcSub_0 > div.lui-select__title').click()
+            driver.find_element_by_css_selector(
+                f'#selEtcSub_0 > div.lui-select__option > label:nth-child({deal_option[neck1]})').click()
+            driver.find_element_by_css_selector('#selEtc_1 > div.lui-select__title').click()
+            driver.find_element_by_css_selector('#selEtc_1 > div.lui-select__option > label:nth-child(2)').click()
+            driver.find_element_by_css_selector('#selEtcSub_1 > div.lui-select__title').click()
+            driver.find_element_by_css_selector(
+                f'#selEtcSub_1 > div.lui-select__option > label:nth-child({deal_option[neck2]})').click()
         elif q[0] == 12:
-            qual = earring_qual
+            option = ear1
+            if q == (12, 2):
+                option = ear2
+                if ear1 == ear2:
+                    data.append(data[-1])
+                    continue
+            driver.find_element_by_css_selector(
+                f'#modal-deal-option > div > div > div.lui-modal__content > div:nth-child(2) > table > tbody > '
+                f'tr:nth-child(4) > td:nth-child(4) > div > div.lui-select__option > label:nth-child('
+                f'{earring_qual})').click()
+            driver.find_element_by_css_selector('#selEtcSub_0 > div.lui-select__title').click()
+            driver.find_element_by_css_selector(
+                f'#selEtcSub_0 > div.lui-select__option > label:nth-child({deal_option[option]})').click()
         else:
-            qual = ring_qual
+            option = rin1
+            if q == (13, 2):
+                option = rin2
+                if rin1 == rin2:
+                    data.append(data[-1])
+                    continue
+            driver.find_element_by_css_selector(
+                f'#modal-deal-option > div > div > div.lui-modal__content > div:nth-child(2) > table > tbody > '
+                f'tr:nth-child(4) > td:nth-child(4) > div > div.lui-select__option > label:nth-child('
+                f'{ring_qual})').click()
+            driver.find_element_by_css_selector('#selEtcSub_0 > div.lui-select__title').click()
+            driver.find_element_by_css_selector(
+                f'#selEtcSub_0 > div.lui-select__option > label:nth-child({deal_option[option]})').click()
         for w in itertools.combinations(target.keys(), 2):
-            condition = auction_set(qual, neck1, neck2, ear1, ear2, rin1, rin2, q)
             engrave1 = w[0]
             engrave2 = w[1]
             # 최소 수치 설정
             for i in [(3, 5), (5, 3), (3, 4), (4, 3), (3, 3)]:
-                condition["request[etcOptionList][2][firstOption]"] = "3"
-                condition["request[etcOptionList][2][secondOption]"] = str(engrave_dict[engrave1])
-                condition["request[etcOptionList][2][minValue]"] = str(i[0])
+                driver.find_element_by_css_selector('#selEtcSub_2 > div.lui-select__title').click()
+                driver.find_element_by_css_selector(
+                    f'#selEtcSub_2 > div.lui-select__option > label:nth-child({engrave_dict[engrave1]})').click()
+                driver.find_element_by_css_selector('#selEtcSub_3 > div.lui-select__title').click()
+                driver.find_element_by_css_selector(
+                    f'#selEtcSub_3 > div.lui-select__option > label:nth-child({engrave_dict[engrave2]})').click()
+                if i[0] != 3:
+                    driver.find_element_by_id('txtEtcMin_2').send_keys(i[0])
+                if i[1] != 3:
+                    driver.find_element_by_id('txtEtcMin_3').send_keys(i[1])
+                driver.find_element_by_css_selector(
+                    '#modal-deal-option > div > div > div.lui-modal__button > button.lui-modal__search').click()
+                try:
+                    element = WebDriverWait(driver, 5).until(
+                        EC.presence_of_element_located((By.CSS_SELECTOR, '#auctionListTbody > tr:nth-child(1) > td:nth-child(5) > div > em')))
+                    print(element.text)
+                finally:
+                    driver.find_element_by_css_selector('#lostark-wrapper > div > main > div > div.deal > div.deal-contents > form > fieldset > div > div.bt > button.button.button--deal-detail').click()
+                try:
+                    element = WebDriverWait(driver, 5).until(
+                        EC.presence_of_element_located((By.CSS_SELECTOR, '#selCategoryDetail > div.lui-select__title')))
+                finally:
+                    pass
+        data.append(temp_list)
+    return *data, target
+# 최저가를 찾는 부분까지 동일하게 만들고, 최저가를 찾으면 해당 페이지들에서 다시 디버프를 고려한 새로운 최저가를 찾은 후
+# 새로운 최저가보다 낮은 기존 최저가를 가지고 있는 조합에서 또 그 과정을 반복해주면 찾을 수 있을 듯
 
-                condition["request[etcOptionList][3][firstOption]"] = "3"
-                condition["request[etcOptionList][3][secondOption]"] = str(engrave_dict[engrave2])
-                condition["request[etcOptionList][3][minValue]"] = str(i[1])
 
-                ret = search_key(condition)
-                with open('result.html', 'w', encoding='utf-8') as f:
-                    f.write(ret)
-                soup = BeautifulSoup(ret, "html.parser")
-                tag = soup.select_one("#auctionListTbody > tr:nth-child(1) > td:nth-child(1)"
-                                      " > div.effect > ul:nth-child(1) > li:nth-child(1) > font:nth-child(2)")
-                print(tag.text)
-                return
-
-    return _neck, _ear1, _ear2, _rin1, _rin2, target
-
-
-def over_15_check(engrave, new):
+def stop_check(engrave, new, previous_price):
     temp = copy.copy(engrave)
-    temp[new[0][0]] += new[0][1]
-    temp[new[1][0]] += new[1][1]
+    index = list(new.effect.keys())
+    temp[index[0]] += new.effect[index[0]]
+    temp[index[1]] += new.effect[index[1]]
+    new_price = previous_price + new.price_low
     for i in temp:
         if temp[i] >= 16:
             return 0
-    return temp
+    return temp, new_price
+
+
+def login():
+    session = Session()
+    request = Request(
+        method='POST',
+        url='https://member.onstove.com/auth/singin',
+        headers={
+            'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/92.0.4515.159 Safari/537.36',
+        },
+        data={
+            "user_id": "oodeng98@gmail.com",
+            "user_pwd": "lostarkengrave24",
+            "forever": "false",
+            "redirect_url": "https://lostark.game.onstove.com/Auction",
+            "inflow_path": "LOST_ARK",
+            "game_no": "45"
+        }
+    )
+    login_response = session.send(request.prepare())
+    print(login_response.text)
+    temp = QUERY
+    response = search_key(temp)
+    with open('test.html', 'w', encoding='utf-8') as f:
+        f.write(response)
+    return response.text
 
 
 if __name__ == "__main__":
-    engrave_dic = {'각성': 255, '갈증': 286, '강령술': 243, '강화 무기': 129, '강화 방패': 242, '결투의 대가': 288,
-                   '고독한 기사': 225, '광기': 125, '광전사의 비기': 188, '구슬동자': 134, '굳은 의지': 123, '극의: 체술': 190,
-                   '급소 타격': 142, '기습의 대가': 249, '긴급구조': 302, '넘치는 교감': 199, '달의 소리': 287, '달인의 저력': 238,
-                   '돌격대장': 254, '두 번째 동료': 258, '마나 효율 증가': 168, '마나의 흐름': 251, '멈출 수 없는 충동': 281,
-                   '바리케이드': 253, '버스트': 279, '번개의 분노': 246, '부러진 뼈': 245, '분노의 망치': 196, '분쇄의 주먹': 236,
-                   '불굴': 235, '사냥의 시간': 290, '상급 소환사': 198, '선수필승': 244, '세맥타통': 256, '속전속결': 300,
-                   '슈퍼 차지': 121, '승부사': 248, '시선 집중': 298, '실드 관통': 237, '심판자': 282, '아드레날린': 299,
-                   '아르데타인의 기술': 284, '안정된 상태': 111, '약자 무시': 107, '에테르 포식자': 110, '여신의 가호': 239,
-                   '역천지체': 257, '연속 포격': 193, '예리한 둔기': 141, '오의 강화': 127, '오의난무': 292, '완벽한 억제': 280,
-                   '원한': 118, '위기 모면': 140, '일격필살': 291, '잔재된 기운': 278, '저주받은 인형': 247, '전문의': 301,
-                   '전투 태세': 224, '절실한 구원': 195, '절정': 276, '절제': 277, '점화': 293, '정기 흡수': 109, '정밀 단도': 303,
-                   '죽음의 습격': 259, '중갑 착용': 240, '중력 수련': 197, '진실된 용맹': 194, '진화의 유산': 285, '질량 증가': 295,
-                   '초심': 189, '최대 마나 증가': 167, '추진력': 296, '축복의 오라': 283, '충격 단련': 191, '타격의 대가': 297,
-                   '탈출의 명수': 202, '폭발물 전문가': 241, '피스메이커': 289, '핸드거너': 192, '화력 강화': 130, '환류': 294,
-                   '황제의 칙령': 201, '황후의 은총': 200}
+    engrave_dic = {"각성": 2, "갈증": 3, "강령술": 4, "강화 무기": 5, "강화 방패": 6, "결투의 대가": 7, "고독한 기사": 8, "광기": 9,
+                   "광전사의 비기": 10, "구슬동자": 11, "굳은 의지": 12, "극의: 체술": 13, "급소 타격": 14, "기습의 대가": 15, "긴급구조": 16,
+                   "넘치는 교감": 17, "달의 소리": 18, "달인의 저력": 19, "돌격대장": 20, "두 번째 동료": 21, "마나 효율 증가": 22,
+                   "마나의 흐름": 23, "멈출 수 없는 충동": 24, "바리케이드": 25, "버스트": 26, "번개의 분노": 27, "부러진 뼈": 28,
+                   "분노의 망치": 29, "분쇄의 주먹": 30, "불굴": 31, "사냥의 시간": 32, "상급 소환사": 33, "선수필승": 34, "세맥타통": 35,
+                   "속전속결": 36, "슈퍼 차지": 37, "승부사": 38, "시선 집중": 39, "실드 관통": 40, "심판자": 41, "아드레날린": 42,
+                   "아르데타인의 기술": 43, "안정된 상태": 44, "약자 무시": 45, "에테르 포식자": 46, "여신의 가호": 47, "역천지체": 48,
+                   "연속 포격": 49, "예리한 둔기": 50, "오의 강화": 51, "오의난무": 52, "완벽한 억제": 53, "원한": 54, "위기 모면": 55,
+                   "일격필살": 56, "잔재된 기운": 57, "저주받은 인형": 58, "전문의": 59, "전투 태세": 60, "절실한 구원": 61, "절정": 62,
+                   "절제": 63, "점화": 64, "정기 흡수": 65, "정밀 단도": 66, "죽음의 습격": 67, "중갑 착용": 68, "중력 수련": 69, "진실된 용맹": 70,
+                   "진화의 유산": 71, "질량 증가": 72, "초심": 73, "최대 마나 증가": 74, "추진력": 75, "축복의 오라": 76, "충격 단련": 77,
+                   "타격의 대가": 78, "탈출의 명수": 79, "폭발물 전문가": 80, "피스메이커": 81, "핸드거너": 82, "화력 강화": 83,
+                   "황제의 칙령": 84, "황후의 은총": 85}
     # qual1, qual2, qual3, a2, a3, a4, a5, a6, a7, a8, a9, a10 = receive_input_data(engrave_dic)
     # find_min_set(*auction_search(engrave_dic, qual1, qual2, qual3, a2, a3, a4, a5, a6, a7, a8), a9, find_price(a8, a10))
-    auction_search(engrave_dic, 60, 0, 0, "치명", "신속", "치명", "치명", "치명", "치명",
-                   {"원한": 15, "돌격대장": 15, "저주받은 인형": 15, "예리한 둔기": 15, "아르데타인의 기술": 15})
+    auction_search(engrave_dic, 2, 2, 2, "치명", "신속", "치명", "치명", "치명", "치명", {"원한": 15, "슈퍼 차지": 15, "바리케이드": 15, "결투의 대가": 15, "고독한 기사": 15})
+
+
 # 33각인을 먼저 검색한 다음 없으면 그 다음 검색들도 안해줘도 되는데?
 # 로스트아크 전투정보실에서 가져와야되나?
 # 이제 디버프 각인도 고려해봐야함
